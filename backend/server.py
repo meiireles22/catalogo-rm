@@ -9,7 +9,7 @@ from typing import List, Optional
 import uuid
 
 # MongoDB connection
-mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+mongo_url = os.environ.get('MONGO_URL')
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'catalogo_ribeiro')]
 
@@ -53,7 +53,24 @@ class Product(BaseModel):
     specs: dict = {}
     cotacoes_image: str = ""
 
-# Routes
+class VideoCreate(BaseModel):
+    title: str
+    url: str
+    type: str = "youtube"
+
+class Video(BaseModel):
+    id: str
+    title: str
+    url: str
+    type: str = "youtube"
+
+class ParametrosUpdate(BaseModel):
+    parametros: list
+
+class DeletedProductId(BaseModel):
+    product_id: str
+
+# ============ AUTH ============
 @api_router.get("/")
 async def root():
     return {"message": "Ribeiro & Moreira - Catalogo API", "status": "online"}
@@ -62,14 +79,10 @@ async def root():
 async def login(request: LoginRequest):
     user = USERS.get(request.username)
     if user and user["password"] == request.password:
-        return LoginResponse(
-            success=True, 
-            message="Login bem sucedido",
-            role=user["role"],
-            username=request.username
-        )
+        return LoginResponse(success=True, message="Login bem sucedido", role=user["role"], username=request.username)
     raise HTTPException(status_code=401, detail="Credenciais invalidas")
 
+# ============ PRODUCTS ============
 @api_router.get("/products/{category_id}", response_model=List[Product])
 async def get_products(category_id: str):
     products = await db.products.find({"category_id": category_id}, {"_id": 0}).to_list(100)
@@ -86,10 +99,7 @@ async def create_product(product: ProductCreate):
 async def update_product(product_id: str, product: ProductCreate):
     product_dict = product.model_dump()
     product_dict["id"] = product_id
-    result = await db.products.update_one(
-        {"id": product_id},
-        {"$set": product_dict}
-    )
+    result = await db.products.update_one({"id": product_id}, {"$set": product_dict})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Produto nao encontrado")
     return Product(**product_dict)
@@ -101,24 +111,106 @@ async def delete_product(product_id: str):
         raise HTTPException(status_code=404, detail="Produto nao encontrado")
     return {"message": "Produto eliminado com sucesso"}
 
+# ============ STATIC PRODUCT EDITS ============
 @api_router.put("/static-products/{product_id}")
 async def update_static_product(product_id: str, product: ProductCreate):
     product_dict = product.model_dump()
     product_dict["id"] = product_id
     product_dict["is_static_edit"] = True
-    
     existing = await db.static_edits.find_one({"id": product_id})
     if existing:
         await db.static_edits.update_one({"id": product_id}, {"$set": product_dict})
     else:
         await db.static_edits.insert_one(product_dict)
-    
     return Product(**product_dict)
 
 @api_router.get("/static-products/edits")
 async def get_static_edits():
     edits = await db.static_edits.find({}, {"_id": 0}).to_list(100)
     return edits
+
+# ============ DELETED PRODUCTS ============
+@api_router.get("/deleted-products")
+async def get_deleted_products():
+    doc = await db.deleted_products.find_one({"type": "deleted_list"}, {"_id": 0})
+    if doc:
+        return {"ids": doc.get("ids", [])}
+    return {"ids": []}
+
+@api_router.post("/deleted-products")
+async def add_deleted_product(data: DeletedProductId):
+    doc = await db.deleted_products.find_one({"type": "deleted_list"})
+    if doc:
+        ids = doc.get("ids", [])
+        if data.product_id not in ids:
+            ids.append(data.product_id)
+        await db.deleted_products.update_one({"type": "deleted_list"}, {"$set": {"ids": ids}})
+    else:
+        await db.deleted_products.insert_one({"type": "deleted_list", "ids": [data.product_id]})
+    return {"message": "Produto marcado como eliminado"}
+
+# ============ VIDEOS ============
+@api_router.get("/videos")
+async def get_videos():
+    videos = await db.videos.find({}, {"_id": 0}).to_list(100)
+    return videos
+
+@api_router.post("/videos")
+async def create_video(video: VideoCreate):
+    video_dict = video.model_dump()
+    video_dict["id"] = f"video-{uuid.uuid4().hex[:8]}"
+    await db.videos.insert_one(video_dict)
+    return Video(**video_dict)
+
+@api_router.put("/videos/{video_id}")
+async def update_video(video_id: str, video: VideoCreate):
+    video_dict = video.model_dump()
+    video_dict["id"] = video_id
+    result = await db.videos.update_one({"id": video_id}, {"$set": video_dict})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Video nao encontrado")
+    return Video(**video_dict)
+
+@api_router.delete("/videos/{video_id}")
+async def delete_video(video_id: str):
+    result = await db.videos.delete_one({"id": video_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Video nao encontrado")
+    return {"message": "Video eliminado com sucesso"}
+
+# ============ PARAMETROS LASER ============
+@api_router.get("/parametros/laser")
+async def get_parametros_laser():
+    doc = await db.parametros.find_one({"type": "laser"}, {"_id": 0})
+    if doc:
+        return {"parametros": doc.get("parametros", [])}
+    return {"parametros": []}
+
+@api_router.put("/parametros/laser")
+async def save_parametros_laser(data: ParametrosUpdate):
+    existing = await db.parametros.find_one({"type": "laser"})
+    if existing:
+        await db.parametros.update_one({"type": "laser"}, {"$set": {"parametros": data.parametros}})
+    else:
+        await db.parametros.insert_one({"type": "laser", "parametros": data.parametros})
+    return {"message": "Parametros laser guardados"}
+
+# ============ PARAMETROS QUINAGEM ============
+@api_router.get("/parametros/quinagem")
+async def get_parametros_quinagem():
+    doc = await db.parametros.find_one({"type": "quinagem"}, {"_id": 0})
+    if doc:
+        return {"parametros": doc.get("parametros", [])}
+    return {"parametros": []}
+
+@api_router.put("/parametros/quinagem")
+async def save_parametros_quinagem(data: ParametrosUpdate):
+    existing = await db.parametros.find_one({"type": "quinagem"})
+    if existing:
+        await db.parametros.update_one({"type": "quinagem"}, {"$set": {"parametros": data.parametros}})
+    else:
+        await db.parametros.insert_one({"type": "quinagem", "parametros": data.parametros})
+    return {"message": "Parametros quinagem guardados"}
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -135,8 +227,12 @@ app.add_middleware(
 build_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "build")
 if os.path.exists(build_path):
     app.mount("/static", StaticFiles(directory=os.path.join(build_path, "static")), name="static")
-    app.mount("/icons", StaticFiles(directory=os.path.join(build_path, "icons")), name="icons")
-    app.mount("/images", StaticFiles(directory=os.path.join(build_path, "images")), name="images")
+    icons_path = os.path.join(build_path, "icons")
+    if os.path.exists(icons_path):
+        app.mount("/icons", StaticFiles(directory=icons_path), name="icons")
+    images_path = os.path.join(build_path, "images")
+    if os.path.exists(images_path):
+        app.mount("/images", StaticFiles(directory=images_path), name="images")
 
     @app.get("/manifest.json")
     async def serve_manifest():
