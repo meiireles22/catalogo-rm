@@ -1,0 +1,66 @@
+/* App-specific styles */
+.App {
+  min-height: 100vh;
+}
+
+/* Category card hover effect */
+.category-card {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease-out;
+}
+
+.category-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+  z-index: 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.category-card:hover::before {
+  background: linear-gradient(to top, rgba(0,200,83,0.3) 0%, rgba(0,0,0,0.5) 50%, transparent 100%);
+}
+
+.category-card:hover {
+  transform: scale(1.02);
+  border-color: #00c853;
+  box-shadow: 0 0 40px rgba(0, 200, 83, 0.2);
+}
+
+.category-card .card-content {
+  position: relative;
+  z-index: 2;
+}
+
+/* Product card styles */
+.product-card {
+  transition: all 0.3s ease-out;
+}
+
+.product-card:hover {
+  transform: translateY(-4px);
+  border-color: #00c853;
+  box-shadow: 0 10px 40px rgba(0, 200, 83, 0.15);
+}
+
+/* Login background animation */
+@keyframes slowZoom {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.1); }
+}
+
+.login-bg {
+  animation: slowZoom 30s ease-in-out infinite alternate;
+}
+
+/* Button press effect */
+.btn-press:active {
+  transform: scale(0.98);
+}
+
+/* Input focus glow */
+.input-glow:focus {
+  box-shadow: 0 0 0 2px rgba(0, 200, 83, 0.3);
+}
